@@ -1,7 +1,7 @@
 "use client";
 
 import { Fragment, useEffect, useMemo, useState } from "react";
-import type { Cap, Meta, Stock } from "@/lib/types";
+import type { Cap, Meta, Status, Stock } from "@/lib/types";
 import { bandLabel, num, pct, price, tone } from "@/lib/format";
 import { Sparkline } from "./Sparkline";
 
@@ -12,8 +12,36 @@ type SortKey = keyof Pick<
 
 const CAPS: (Cap | "Other")[] = ["Large", "Mid", "Small", "Micro", "Other"];
 
+const STATUSES: Status[] = ["Active", "Trade-to-trade", "SME", "No recent trades", "No trades in 1Y", "Suspended"];
+
+const EXCHANGES: { id: string; label: string; test: (s: Stock) => boolean }[] = [
+  { id: "", label: "All exchanges", test: () => true },
+  { id: "nse", label: "Listed on NSE", test: (s) => s.exchange === "NSE" || s.exchange === "NSE+BSE" },
+  { id: "bse", label: "Listed on BSE", test: (s) => s.exchange === "BSE" || s.exchange === "NSE+BSE" },
+  { id: "both", label: "NSE and BSE", test: (s) => s.exchange === "NSE+BSE" },
+  { id: "nse-only", label: "NSE only", test: (s) => s.exchange === "NSE" },
+  { id: "bse-only", label: "BSE only", test: (s) => s.exchange === "BSE" },
+];
+
+const STATUS_TONE: Record<string, string> = {
+  "Trade-to-trade": "warn",
+  SME: "dim",
+  "No recent trades": "dim",
+  "No trades in 1Y": "dim",
+  Suspended: "down",
+};
+
+const shortDate = (d: string) =>
+  new Date(d).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "2-digit" });
+
 const PRESETS: { id: string; label: string; hint: string; test: (s: Stock) => boolean }[] = [
-  { id: "all", label: "All stocks", hint: "Everything listed", test: () => true },
+  { id: "all", label: "All companies", hint: "Every listed company on NSE and BSE, traded or not", test: () => true },
+  {
+    id: "traded",
+    label: "Traded today",
+    hint: "Had at least one trade in the latest session",
+    test: (s) => s.turnover_cr != null,
+  },
   {
     id: "universe",
     label: "My universe",
@@ -47,6 +75,9 @@ const COLUMNS: { key: SortKey; label: string; title?: string; num?: boolean }[] 
 
 const PAGE = 50;
 
+// ISIN is unique across exchanges; a BSE-only ticker can match another company's NSE symbol
+const rowKey = (s: Stock) => s.isin ?? s.symbol;
+
 function toCsv(rows: Stock[]) {
   const keys = Object.keys(rows[0] ?? {}).filter((k) => k !== "spark") as (keyof Stock)[];
   const esc = (v: unknown) => (v == null ? "" : /[",\n]/.test(String(v)) ? `"${String(v).replace(/"/g, '""')}"` : String(v));
@@ -64,6 +95,8 @@ export function Screener() {
   const [tradableOnly, setTradableOnly] = useState(false);
   const [minAdtv, setMinAdtv] = useState("");
   const [industry, setIndustry] = useState("");
+  const [exchange, setExchange] = useState("");
+  const [status, setStatus] = useState("");
   const [sort, setSort] = useState<{ key: SortKey; dir: 1 | -1 }>({ key: "turnover_cr", dir: -1 });
   const [page, setPage] = useState(0);
   const [open, setOpen] = useState<string | null>(null);
@@ -86,12 +119,19 @@ export function Screener() {
   const rows = useMemo(() => {
     if (!stocks) return [];
     const test = PRESETS.find((p) => p.id === preset)!.test;
+    const exTest = EXCHANGES.find((e) => e.id === exchange)!.test;
     const needle = q.trim().toLowerCase();
     const adtv = parseFloat(minAdtv);
     const out = stocks.filter(
       (s) =>
         test(s) &&
-        (!needle || s.symbol.toLowerCase().includes(needle) || (s.name ?? "").toLowerCase().includes(needle)) &&
+        exTest(s) &&
+        (!status || s.status === status) &&
+        (!needle ||
+          s.symbol.toLowerCase().includes(needle) ||
+          (s.name ?? "").toLowerCase().includes(needle) ||
+          (s.bse_code ?? "").includes(needle) ||
+          (s.isin ?? "").toLowerCase() === needle) &&
         (caps.size === 0 || caps.has(s.cap ?? "Other")) &&
         (!tradableOnly || s.tradable) &&
         (!industry || s.industry === industry) &&
@@ -105,9 +145,9 @@ export function Screener() {
       if (y == null) return -1;
       return (x < y ? -1 : x > y ? 1 : 0) * dir;
     });
-  }, [stocks, preset, q, caps, tradableOnly, industry, minAdtv, sort]);
+  }, [stocks, preset, q, caps, tradableOnly, industry, exchange, status, minAdtv, sort]);
 
-  useEffect(() => setPage(0), [preset, q, caps, tradableOnly, industry, minAdtv, sort]);
+  useEffect(() => setPage(0), [preset, q, caps, tradableOnly, industry, exchange, status, minAdtv, sort]);
 
   const pages = Math.max(1, Math.ceil(rows.length / PAGE));
   const visible = rows.slice(page * PAGE, page * PAGE + PAGE);
@@ -135,10 +175,10 @@ export function Screener() {
     <main className="wrap">
       <header className="top">
         <div>
-          <h1>NSE Screener</h1>
+          <h1>India Stock Screener</h1>
           <p className="muted">
             {meta
-              ? `${num(meta.stocks)} stocks · data as of ${new Date(meta.as_of).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" })} · ${meta.breakouts_today} breakouts today`
+              ? `${num(meta.stocks)} companies${meta.by_exchange ? ` (NSE+BSE ${num(meta.by_exchange["NSE+BSE"] ?? 0)} · NSE only ${num(meta.by_exchange["NSE"] ?? 0)} · BSE only ${num(meta.by_exchange["BSE"] ?? 0)})` : ""} · data as of ${new Date(meta.as_of).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" })} · ${meta.breakouts_today} breakouts today`
               : "Loading…"}
           </p>
         </div>
@@ -157,7 +197,20 @@ export function Screener() {
       </section>
 
       <section className="filters">
-        <input className="search" placeholder="Search symbol or company" value={q} onChange={(e) => setQ(e.target.value)} />
+        <input className="search" placeholder="Name, symbol, BSE code or ISIN" value={q} onChange={(e) => setQ(e.target.value)} />
+        <select value={exchange} onChange={(e) => setExchange(e.target.value)} aria-label="Exchange">
+          {EXCHANGES.map((x) => (
+            <option key={x.id} value={x.id}>
+              {x.label}
+            </option>
+          ))}
+        </select>
+        <select value={status} onChange={(e) => setStatus(e.target.value)} aria-label="Status">
+          <option value="">All statuses</option>
+          {STATUSES.map((x) => (
+            <option key={x}>{x}</option>
+          ))}
+        </select>
         <div className="group" role="group" aria-label="Market cap">
           {CAPS.map((c) => (
             <button key={c} className={`chip small ${caps.has(c) ? "on" : ""}`} onClick={() => toggleCap(c)}>
@@ -215,16 +268,22 @@ export function Screener() {
               </tr>
             )}
             {visible.map((s) => (
-              <Fragment key={s.symbol}>
-                <tr className={`row ${open === s.symbol ? "open" : ""}`} onClick={() => setOpen(open === s.symbol ? null : s.symbol)}>
+              <Fragment key={rowKey(s)}>
+                <tr className={`row ${open === rowKey(s) ? "open" : ""}`} onClick={() => setOpen(open === rowKey(s) ? null : rowKey(s))}>
                   <td className="stock">
                     <strong>{s.symbol}</strong>
                     <span className="muted name">
                       {s.name ?? ""}
                       {s.cap ? ` · ${s.cap}` : ""}
+                      {s.exchange && s.exchange !== "NSE+BSE" ? ` · ${s.exchange} only` : ""}
                     </span>
                   </td>
-                  <td className="num">{price(s.close)}</td>
+                  <td className="num">
+                    {price(s.close)}
+                    {s.last_trade && meta && s.last_trade !== meta.as_of && (
+                      <span className="muted stale">last {shortDate(s.last_trade)}</span>
+                    )}
+                  </td>
                   {(["chg_1d", "chg_1w", "chg_1m", "chg_1y"] as const).map((k) => (
                     <td key={k} className={`num ${tone(s[k])}`}>
                       {pct(s[k])}
@@ -238,14 +297,15 @@ export function Screener() {
                     <Sparkline values={s.spark} />
                   </td>
                   <td className="flags">
+                    {s.status && s.status !== "Active" && <span className={`tag ${STATUS_TONE[s.status] ?? "dim"}`}>{s.status}</span>}
                     {s.breakout && <span className="tag go">Breakout</span>}
                     {s.locked_up && <span className="tag up">Upper circuit</span>}
                     {s.locked_down && <span className="tag down">Lower circuit</span>}
                     {s.band != null && s.band > 0 && s.band < 20 && <span className="tag warn">{s.band}% band</span>}
-                    {!s.tradable && <span className="tag dim">Untradable</span>}
+                    {!s.tradable && s.status === "Active" && s.price_source === "NSE" && <span className="tag dim">Untradable</span>}
                   </td>
                 </tr>
-                {open === s.symbol && (
+                {open === rowKey(s) && (
                   <tr className="detail">
                     <td colSpan={COLUMNS.length + 2}>
                       <div className="detail-grid">
@@ -255,19 +315,33 @@ export function Screener() {
                         </div>
                         <dl>
                           <dt>Industry</dt><dd>{s.industry ?? "–"}</dd>
+                          <dt>Listed on</dt><dd>{s.exchange ?? "–"}{s.segment === "SME" ? " (SME)" : ""}</dd>
+                          <dt>ISIN</dt><dd>{s.isin ?? "–"}{s.bse_code ? ` · BSE ${s.bse_code}` : ""}</dd>
                           <dt>3M / 6M</dt><dd><span className={tone(s.chg_3m)}>{pct(s.chg_3m)}</span> / <span className={tone(s.chg_6m)}>{pct(s.chg_6m)}</span></dd>
                           <dt>52W range</dt><dd>{price(s.low_52w)} – {price(s.high_52w)}</dd>
-                          <dt>Today&apos;s value</dt><dd>₹{num(s.turnover_cr, 1)} cr</dd>
+                          <dt>Today&apos;s value</dt><dd>{s.turnover_cr == null ? "No trade today" : `₹${num(s.turnover_cr, 1)} cr`}</dd>
                         </dl>
                         <dl>
-                          <dt>Delivery</dt><dd>{num(s.deliv_pct, 1)}% (20D avg {num(s.deliv_avg_20, 1)}%)</dd>
+                          <dt>Delivery</dt>
+                          <dd>{s.deliv_pct == null && s.deliv_avg_20 == null ? "–" : `${num(s.deliv_pct, 1)}% (20D avg ${num(s.deliv_avg_20, 1)}%)`}</dd>
                           <dt>Price band</dt><dd>{bandLabel(s.band)}</dd>
+                          <dt>Last trade</dt><dd>{s.last_trade ? `${shortDate(s.last_trade)}${s.price_source ? ` on ${s.price_source}` : ""}` : "None in the past year"}</dd>
                           <dt>Last breakout</dt><dd>{s.last_breakout ?? "None in the past year"}</dd>
                           <dt>Links</dt>
                           <dd>
-                            <a href={`https://www.nseindia.com/get-quotes/equity?symbol=${encodeURIComponent(s.symbol)}`} target="_blank" rel="noreferrer">NSE</a>
-                            {" · "}
-                            <a href={`https://www.screener.in/company/${encodeURIComponent(s.symbol)}/`} target="_blank" rel="noreferrer">Screener.in</a>
+                            {s.nse_symbol && (
+                              <>
+                                <a href={`https://www.nseindia.com/get-quotes/equity?symbol=${encodeURIComponent(s.nse_symbol)}`} target="_blank" rel="noreferrer">NSE</a>
+                                {" · "}
+                              </>
+                            )}
+                            {s.bse_code && (
+                              <>
+                                <a href={`https://www.bseindia.com/stock-share-price/x/${encodeURIComponent(s.symbol)}/${s.bse_code}/`} target="_blank" rel="noreferrer">BSE</a>
+                                {" · "}
+                              </>
+                            )}
+                            <a href={`https://www.screener.in/company/${encodeURIComponent(s.nse_symbol ?? s.bse_code ?? s.symbol)}/`} target="_blank" rel="noreferrer">Screener.in</a>
                           </dd>
                         </dl>
                       </div>

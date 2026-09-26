@@ -78,13 +78,13 @@ def parse_sec_list(text: str) -> pd.DataFrame:
 
 # --------------------------------------------------------------------------- fetching
 
-def _get(url: str, session=None, retries: int = 3) -> bytes | None:
+def _get(url: str, session=None, retries: int = 3, headers: dict | None = None) -> bytes | None:
     import requests
 
     s = session or requests.Session()
     for attempt in range(retries):
         try:
-            r = s.get(url, headers=HEADERS, timeout=30)
+            r = s.get(url, headers=headers or HEADERS, timeout=30)
             if r.status_code == 404:
                 return None  # holiday or file not published
             r.raise_for_status()
@@ -122,7 +122,59 @@ def fetch_day(day: pd.Timestamp, session=None) -> pd.DataFrame | None:
     return prices
 
 
-def build_cache(start: str, end: str, cache_dir: str | Path, pause: float = 0.5, max_initial_errors: int = 5) -> dict:
+BSE_HEADERS = {**HEADERS, "Referer": "https://www.bseindia.com/", "Origin": "https://www.bseindia.com"}
+BSE_BHAV = "https://www.bseindia.com/download/BhavCopy/Equity/BhavCopy_BSE_CM_0_0_0_{d}_F_0000.CSV"
+BSE_COLUMNS = PANEL_COLUMNS + ["isin", "bse_code", "ticker", "name"]
+
+
+def is_equity_isin(isin: pd.Series) -> pd.Series:
+    """Indian company equity shares: INE + issuer (4) + security type '01'. Excludes ETFs (INF...), debt, REITs."""
+    s = isin.astype(str).str.strip().str.upper()
+    return s.str.startswith("INE") & (s.str[7:9] == "01") & (s.str.len() == 12)
+
+
+def parse_bse_udiff(text: str) -> pd.DataFrame | None:
+    """Parse a BSE UDiFF equity bhavcopy. Keyed by ISIN (`symbol` = ISIN) so it merges with NSE."""
+    if "TradDt" not in text[:300]:
+        return None  # BSE serves an HTML page, not a 404, for days without a file
+    df = pd.read_csv(io.StringIO(text), skipinitialspace=True, low_memory=False)
+    df.columns = [c.strip() for c in df.columns]
+    df = df[is_equity_isin(df["ISIN"])]
+    turnover = pd.to_numeric(df["TtlTrfVal"], errors="coerce")
+    out = pd.DataFrame({
+        "date": pd.to_datetime(df["TradDt"]),
+        "symbol": df["ISIN"].str.strip(),
+        "series": df["SctySrs"].astype(str).str.strip(),  # BSE group: A, B, T, X, XT, Z, M, MT ...
+        "open": pd.to_numeric(df["OpnPric"], errors="coerce"),
+        "high": pd.to_numeric(df["HghPric"], errors="coerce"),
+        "low": pd.to_numeric(df["LwPric"], errors="coerce"),
+        "close": pd.to_numeric(df["ClsPric"], errors="coerce"),
+        "prev_close": pd.to_numeric(df["PrvsClsgPric"], errors="coerce"),
+        "volume": pd.to_numeric(df["TtlTradgVol"], errors="coerce"),
+        "turnover": turnover,
+        "deliv_pct": np.nan,
+        "band": np.nan,
+        "isin": df["ISIN"].str.strip(),
+        "bse_code": df["FinInstrmId"].astype(str).str.strip(),
+        "ticker": df["TckrSymb"].astype(str).str.strip(),
+        "name": df["FinInstrmNm"].astype(str).str.strip(),
+    })
+    return out[BSE_COLUMNS].reset_index(drop=True)
+
+
+def fetch_bse_day(day: pd.Timestamp, session=None) -> pd.DataFrame | None:
+    raw = _get(BSE_BHAV.format(d=day.strftime("%Y%m%d")), session, headers=BSE_HEADERS)
+    return None if raw is None else parse_bse_udiff(_maybe_unzip(raw))
+
+
+def build_cache(
+    start: str,
+    end: str,
+    cache_dir: str | Path,
+    pause: float = 0.5,
+    max_initial_errors: int = 5,
+    exchange: str = "nse",
+) -> dict:
     """Download each trading day into `cache_dir/YYYY/YYYY-MM-DD.parquet`.
 
     Resumable: skips days already cached and days recorded in `no_file.txt`
@@ -135,11 +187,12 @@ def build_cache(start: str, end: str, cache_dir: str | Path, pause: float = 0.5,
     cache.mkdir(parents=True, exist_ok=True)
     no_file_path = cache / "no_file.txt"
     no_file = set(no_file_path.read_text().split()) if no_file_path.exists() else set()
+    fetcher, home = {"nse": (fetch_day, "https://www.nseindia.com"), "bse": (fetch_bse_day, "https://www.bseindia.com")}[exchange]
     session = requests.Session()
     try:
-        session.get("https://www.nseindia.com", headers=HEADERS, timeout=30)  # cookies
+        session.get(home, headers=HEADERS, timeout=30)  # cookies
     except Exception as e:
-        print(f"warning: NSE homepage request failed ({e}); trying archives anyway")
+        print(f"warning: {home} request failed ({e}); trying downloads anyway")
     stats = {"fetched": 0, "cached": 0, "no_file": 0, "errors": 0}
     attempts = 0
     # Every calendar day, not just weekdays: NSE holds special weekend sessions (Budget day,
@@ -155,12 +208,12 @@ def build_cache(start: str, end: str, cache_dir: str | Path, pause: float = 0.5,
             continue
         attempts += 1
         try:
-            df = fetch_day(day, session)
+            df = fetcher(day, session)
         except Exception as e:
             stats["errors"] += 1
             print(f"{key}: error {e}")
             if attempts == stats["errors"] == max_initial_errors:
-                raise RuntimeError(f"first {max_initial_errors} downloads all failed; NSE is likely blocking this IP") from e
+                raise RuntimeError(f"first {max_initial_errors} downloads all failed; {exchange.upper()} is likely blocking this IP") from e
             time.sleep(pause)
             continue
         if df is None:
@@ -287,7 +340,8 @@ def prepare_panel(df: pd.DataFrame, adjust: bool = True, log: bool = False) -> p
     df["date"] = pd.to_datetime(df["date"])
     df = df.dropna(subset=["open", "high", "low", "close"])
     df = df[(df["close"] > 0) & (df["volume"] > 0)]
-    df = df.drop_duplicates(["symbol", "series", "date"], keep="last")
+    # one row per symbol per day; if a stock printed in two series that day, keep the busier one
+    df = df.sort_values("turnover").drop_duplicates(["symbol", "date"], keep="last")
     if adjust and "prev_close" in df and df["prev_close"].notna().any():
         df = adjust_for_corporate_actions(df, log=log)
     return df.sort_values(["symbol", "date"]).reset_index(drop=True)

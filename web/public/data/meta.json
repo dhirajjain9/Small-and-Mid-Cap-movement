@@ -1,8 +1,20 @@
 {
   "as_of": "2026-09-25",
-  "stocks": 2309,
+  "stocks": 5586,
   "breakouts_today": 0,
   "has_reference": true,
+  "by_exchange": {
+    "NSE+BSE": 2453,
+    "BSE": 2432,
+    "NSE": 701
+  },
+  "by_status": {
+    "Active": 3513,
+    "SME": 1031,
+    "Trade-to-trade": 801,
+    "No recent trades": 241
+  },
+  "bse_master_file": false,
   "universe": {
     "min_adtv_cr": 15.0,
     "bands": "20% or no band"

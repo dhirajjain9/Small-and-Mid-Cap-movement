@@ -18,8 +18,9 @@ if __name__ == "__main__":
     ap.add_argument("--end", required=True)
     ap.add_argument("--cache", default="data/bhav")
     ap.add_argument("--pause", type=float, default=0.5)
+    ap.add_argument("--exchange", choices=["nse", "bse"], default="nse")
     ap.add_argument("--max-errors", type=int, default=None, help="exit non-zero if more days than this failed")
     a = ap.parse_args()
-    stats = build_cache(a.start, a.end, a.cache, a.pause)
+    stats = build_cache(a.start, a.end, a.cache, a.pause, exchange=a.exchange)
     if a.max_errors is not None and stats["errors"] > a.max_errors:
         sys.exit(f"{stats['errors']} days failed to download")

@@ -1,11 +1,23 @@
 export type Cap = "Large" | "Mid" | "Small" | "Micro";
 
+export type Status = "Active" | "Trade-to-trade" | "SME" | "No recent trades" | "No trades in 1Y" | "Suspended";
+export type Exchange = "NSE+BSE" | "NSE" | "BSE";
+
 export interface Stock {
   symbol: string;
   name: string | null;
+  isin: string | null;
+  exchange: Exchange | null;
+  segment: "Main" | "SME" | null;
+  status: Status | null;
+  nse_symbol: string | null;
+  bse_code: string | null;
+  price_source: "NSE" | "BSE" | null;
+  series: string | null;
+  last_trade: string | null;
   industry: string | null;
   cap: Cap | null;
-  close: number;
+  close: number | null;
   chg_1d: number | null;
   chg_1w: number | null;
   chg_1m: number | null;
@@ -15,7 +27,7 @@ export interface Stock {
   high_52w: number | null;
   low_52w: number | null;
   from_high: number | null;
-  volume: number;
+  volume: number | null;
   volume_ratio: number | null;
   deliv_pct: number | null;
   deliv_avg_20: number | null;
@@ -36,5 +48,8 @@ export interface Meta {
   stocks: number;
   breakouts_today: number;
   has_reference: boolean;
+  by_exchange?: Record<string, number>;
+  by_status?: Record<string, number>;
+  bse_master_file?: boolean;
   universe: { min_adtv_cr: number; bands: string };
 }

@@ -83,6 +83,7 @@ th.num button { width: 100%; text-align: right; }
 .row { cursor: pointer; }
 .row:hover td, .row.open td { background: color-mix(in srgb, var(--accent-soft) 45%, transparent); }
 .stock strong { display: block; }
+.stale { display: block; font-size: 11px; }
 .name { display: block; font-size: 12px; max-width: 220px; overflow: hidden; text-overflow: ellipsis; }
 .up { color: var(--up); }
 .down { color: var(--down); }
