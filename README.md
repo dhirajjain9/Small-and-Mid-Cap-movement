@@ -10,10 +10,10 @@ The system's first job is keeping me out of bad trades; its second is finding go
 
 | Step | State |
 |---|---|
-| 1. `/research`: tradability filter + volume-breakout backtest | Code and tests done; needs real bhavcopy data (see [research/README.md](research/README.md)) |
+| 1. `/research`: tradability filter + volume-breakout backtest | Done. Volume breakout failed the kill bar on real data (2019–2026) |
 | 2. `/pipeline`: Actions jobs + Telegram brief | Not started |
 | 3. Regime filter + other playbooks | Not started |
-| 4. `/web`: dashboard on Vercel | Not started (Vercel project exists; set Root Directory to `web`) |
+| 4. `/web`: screener on Vercel | First version: every NSE stock, market data only, refreshed daily by `.github/workflows/daily.yml` |
 
 ## Architecture
 

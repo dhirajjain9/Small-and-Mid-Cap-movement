@@ -163,8 +163,10 @@ def build_cache(start: str, end: str, cache_dir: str | Path, pause: float = 0.5,
             continue
         if df is None:
             stats["no_file"] += 1
-            with no_file_path.open("a") as f:
-                f.write(key + "\n")
+            # Only remember old misses as holidays: a recent day may just not be published yet.
+            if day < pd.Timestamp.today().normalize() - pd.Timedelta(days=5):
+                with no_file_path.open("a") as f:
+                    f.write(key + "\n")
         else:
             path.parent.mkdir(parents=True, exist_ok=True)
             df.to_parquet(path, index=False)
