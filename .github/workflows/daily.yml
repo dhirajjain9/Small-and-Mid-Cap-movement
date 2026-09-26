@@ -10,7 +10,7 @@ on:
   workflow_dispatch:
   push:
     branches: [claude/bold-ramanujan-tj3yqi]
-    paths: [".github/workflows/daily.yml", "pipeline/**", "research/nsesig/**"]
+    paths: [".github/workflows/daily.yml", "pipeline/**", "research/nsesig/**", "data/reference/**"]
 
 permissions:
   contents: write
@@ -53,6 +53,25 @@ jobs:
         with:
           path: research/data/bhav
           key: bhav-${{ github.run_id }}
+
+      - name: Restore BSE bhavcopy cache
+        uses: actions/cache/restore@v4
+        with:
+          path: research/data/bse
+          key: bse-${{ github.run_id }}
+          restore-keys: bse-
+
+      - name: Download new BSE bhavcopies
+        run: |
+          python -u research/scripts/fetch_bhavcopy.py --exchange bse --cache research/data/bse \
+            --start "$(TZ=Asia/Kolkata date -d '400 days ago' +%F)" --end "$(TZ=Asia/Kolkata date +%F)"
+
+      - name: Save BSE bhavcopy cache
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: research/data/bse
+          key: bse-${{ github.run_id }}
 
       - name: Build snapshot
         run: python -u pipeline/build_snapshot.py --cache research/data/bhav --out web/public/data
