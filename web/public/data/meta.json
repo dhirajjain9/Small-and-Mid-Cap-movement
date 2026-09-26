@@ -1,0 +1,10 @@
+{
+  "as_of": "2026-09-25",
+  "stocks": 2309,
+  "breakouts_today": 0,
+  "has_reference": true,
+  "universe": {
+    "min_adtv_cr": 15.0,
+    "bands": "20% or no band"
+  }
+}
