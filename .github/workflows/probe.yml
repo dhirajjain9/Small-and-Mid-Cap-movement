@@ -1,0 +1,19 @@
+name: probe-fundamentals
+
+# One-off check of shares-outstanding and EPS sources from the runner.
+on:
+  push:
+    branches: [claude/bold-ramanujan-tj3yqi]
+    paths: [".github/workflows/probe.yml", "pipeline/probe_fundamentals.py"]
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: pip install pandas requests yfinance
+      - run: python -u pipeline/probe_fundamentals.py
