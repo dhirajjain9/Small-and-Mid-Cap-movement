@@ -107,3 +107,16 @@ def test_missing_session_is_not_an_adjustment():
         ]
     adj = adjust_for_corporate_actions(pd.DataFrame(rows))
     assert (adj["close"].groupby(adj["symbol"]).first() == 100).all()
+
+
+def test_series_gap_is_not_an_adjustment():
+    d = pd.bdate_range("2024-01-01", periods=4)
+    other = [{"date": x, "symbol": f"O{i}", "open": 10, "high": 10, "low": 10, "close": 10, "prev_close": 10, "volume": 1}
+             for x in d for i in range(10)]
+    x = [  # X is absent on day 3 (traded in BE), comes back with prev_close from that day
+        {"date": d[0], "symbol": "X", "open": 100, "high": 100, "low": 100, "close": 100, "prev_close": 100, "volume": 1},
+        {"date": d[1], "symbol": "X", "open": 100, "high": 100, "low": 100, "close": 100, "prev_close": 100, "volume": 1},
+        {"date": d[3], "symbol": "X", "open": 88, "high": 88, "low": 88, "close": 88, "prev_close": 90, "volume": 1},
+    ]
+    adj = adjust_for_corporate_actions(pd.DataFrame(other + x))
+    assert adj.loc[adj["symbol"] == "X", "close"].tolist() == pytest.approx([100, 100, 88])

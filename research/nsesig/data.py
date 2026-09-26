@@ -256,6 +256,13 @@ def adjust_for_corporate_actions(df: pd.DataFrame, log: bool = False) -> pd.Data
         print("dates that look like a missing prior session (no adjustment applied):",
               sorted(df.loc[missing_session, "date"].dt.strftime("%Y-%m-%d").unique()))
     nse_step = nse_step.where(~missing_session, 1.0)
+    # Likewise when this stock skipped sessions (moved to BE/trade-to-trade, suspended): its
+    # prev_close is from a row we don't have, so the step is a price move, not an adjustment.
+    dates = pd.Index(np.sort(df["date"].unique()))
+    pos = dates.get_indexer(df["date"])
+    prev_pos = pd.Series(pos, index=df.index).groupby(df["symbol"]).shift(1)
+    stock_gap = prev_pos.notna() & (pos - prev_pos > 1)
+    nse_step = nse_step.where(~stock_gap, 1.0)
     inferred = _infer_split_step(df["open"], df["close"], last_close).where(~missing_session, 1.0)
     step = nse_step.where(nse_step != 1.0, inferred)
     if log:
