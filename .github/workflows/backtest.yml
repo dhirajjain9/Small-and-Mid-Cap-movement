@@ -75,6 +75,9 @@ jobs:
           python -u scripts/run_volume_breakout.py --cache data/bhav > results.json
           cat results.json
 
+      - name: Export 2023+ signals and trades
+        run: python -u scripts/export_trades.py --cache data/bhav --start 2023-01-01 --out out
+
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -82,3 +85,4 @@ jobs:
           path: |
             research/results.json
             research/fetch.log
+            research/out/

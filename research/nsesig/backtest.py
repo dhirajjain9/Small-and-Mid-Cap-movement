@@ -294,6 +294,8 @@ class BacktestResult:
     in_sample: PeriodResult
     out_of_sample: PeriodResult
     verdict: dict  # judged on out-of-sample only
+    signals: pd.DataFrame | None = None  # every signal with its forward moves
+    trades: pd.DataFrame | None = None  # every signal simulated as a trade (before portfolio limits)
 
 
 def run_volume_breakout(
@@ -334,4 +336,5 @@ def run_volume_breakout(
 
     ins = period("in_sample", df["date"].min(), train_end)
     oos = period("out_of_sample", test_start, df["date"].max())
-    return BacktestResult(vb.NAME, target, ins, oos, kill_bar_verdict(oos.trades, oos.post_tax, settings.kill_bar))
+    verdict = kill_bar_verdict(oos.trades, oos.post_tax, settings.kill_bar)
+    return BacktestResult(vb.NAME, target, ins, oos, verdict, outcomes, trades)
