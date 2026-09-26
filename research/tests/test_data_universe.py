@@ -94,3 +94,16 @@ def test_real_crash_in_band_not_treated_as_split():
         "prev_close": [100, 100, 100], "volume": [10, 10, 30],
     })
     assert adjust_for_corporate_actions(df)["close"].tolist() == pytest.approx([100, 100, 80])
+
+
+def test_missing_session_is_not_an_adjustment():
+    # every stock's prev_close on day 3 reflects a session we don't have
+    rows = []
+    for sym in "ABCDE":
+        rows += [
+            {"date": pd.Timestamp("2024-01-01"), "symbol": sym, "open": 100, "high": 100, "low": 100, "close": 100, "prev_close": 100, "volume": 1},
+            {"date": pd.Timestamp("2024-01-02"), "symbol": sym, "open": 100, "high": 100, "low": 100, "close": 100, "prev_close": 100, "volume": 1},
+            {"date": pd.Timestamp("2024-01-04"), "symbol": sym, "open": 103, "high": 104, "low": 102, "close": 103, "prev_close": 102, "volume": 1},
+        ]
+    adj = adjust_for_corporate_actions(pd.DataFrame(rows))
+    assert (adj["close"].groupby(adj["symbol"]).first() == 100).all()

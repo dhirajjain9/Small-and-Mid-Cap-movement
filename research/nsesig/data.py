@@ -142,7 +142,9 @@ def build_cache(start: str, end: str, cache_dir: str | Path, pause: float = 0.5,
         print(f"warning: NSE homepage request failed ({e}); trying archives anyway")
     stats = {"fetched": 0, "cached": 0, "no_file": 0, "errors": 0}
     attempts = 0
-    for day in pd.bdate_range(start, end):
+    # Every calendar day, not just weekdays: NSE holds special weekend sessions (Budget day,
+    # Muhurat trading, DR drills). Weekends 404 once and are then remembered in no_file.txt.
+    for day in pd.date_range(start, end):
         key = str(day.date())
         path = cache / str(day.year) / f"{key}.parquet"
         if path.exists():
@@ -246,7 +248,15 @@ def adjust_for_corporate_actions(df: pd.DataFrame, log: bool = False) -> pd.Data
     df = df.sort_values(["symbol", "date"]).copy()
     last_close = df.groupby("symbol")["close"].shift(1)
     nse_step = (df["prev_close"] / last_close).where(lambda s: (s - 1).abs() > 0.005, 1.0).fillna(1.0)
-    inferred = _infer_split_step(df["open"], df["close"], last_close)
+    # A missing session (a trading day absent from the cache) makes prev_close differ from the
+    # last close we have for nearly every stock at once. Real corporate actions never do that.
+    by_date = (nse_step != 1.0).groupby(df["date"])
+    missing_session = (by_date.transform("mean") > 0.10) & (by_date.transform("size") >= 5)
+    if log and missing_session.any():
+        print("dates that look like a missing prior session (no adjustment applied):",
+              sorted(df.loc[missing_session, "date"].dt.strftime("%Y-%m-%d").unique()))
+    nse_step = nse_step.where(~missing_session, 1.0)
+    inferred = _infer_split_step(df["open"], df["close"], last_close).where(~missing_session, 1.0)
     step = nse_step.where(nse_step != 1.0, inferred)
     if log:
         ev = df.loc[step != 1.0, ["date", "symbol"]].assign(step=step[step != 1.0], source=np.where(nse_step[step != 1.0] != 1.0, "nse", "inferred"))
