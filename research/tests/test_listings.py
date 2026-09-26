@@ -50,7 +50,9 @@ def test_all_companies_snapshot():
     nse.loc[nse["symbol"] == "SYM01", "series"] = "SM"
     bse_src = make_panel(n_symbols=3, start="2025-01-01", end="2026-06-30", seed=3)
     bse = pd.concat([
-        _bse_panel(bse_src[bse_src["symbol"] == "SYM00"], ISIN["A"], "500001", "A"),  # dual-listed
+        _bse_panel(bse_src[(bse_src["symbol"] == "SYM00") & (bse_src["date"] >= "2026-01-01")], ISIN["A"], "500001", "A"),  # dual-listed
+        # same scrip under its pre-split ISIN: must fold into A, not appear as a dormant company
+        _bse_panel(bse_src[(bse_src["symbol"] == "SYM00") & (bse_src["date"] < "2026-01-01")], "INE000Z01011", "500001", "A"),
         _bse_panel(bse_src[bse_src["symbol"] == "SYM01"], ISIN["D"], "500004"),  # BSE only, active
         _bse_panel(bse_src[(bse_src["symbol"] == "SYM02") & (bse_src["date"] <= "2026-04-30")], ISIN["E"], "500005"),
     ])

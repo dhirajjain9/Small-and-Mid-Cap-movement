@@ -185,6 +185,8 @@ def build_snapshot(
     from . import listings
 
     nse = _nse_signals(panel, cfg)
+    if bse_panel is not None and len(bse_panel):
+        bse_panel = listings.canonical_bse_isin(bse_panel)
     as_of = max(nse["date"].max(), bse_panel["date"].max() if bse_panel is not None and len(bse_panel) else nse["date"].max())
     nse_m = stock_metrics(nse, as_of, spark_weeks)
     ref = reference_table(refs) if refs else None

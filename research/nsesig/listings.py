@@ -99,11 +99,26 @@ def load_bse_master(ref_dir: str | Path) -> pd.DataFrame:
     return df.sort_values("_rank").drop_duplicates("isin").drop(columns="_rank")
 
 
+def canonical_bse_isin(bse_raw: pd.DataFrame) -> pd.DataFrame:
+    """Map every scrip's old ISINs onto its latest one.
+
+    A split or face-value change gives a company a new ISIN but BSE keeps its scrip code,
+    so without this the pre-split ISIN shows up as a separate, dormant company.
+    """
+    if bse_raw is None or bse_raw.empty:
+        return bse_raw
+    latest = bse_raw.sort_values("date").groupby("bse_code")["isin"].last()
+    out = bse_raw.copy()
+    out["isin"] = out["bse_code"].map(latest).fillna(out["isin"])
+    out["symbol"] = out["isin"]
+    return out
+
+
 def bse_from_bhavcopies(bse_raw: pd.DataFrame) -> pd.DataFrame:
     """Latest identity of every scrip seen in the BSE bhavcopies."""
     if bse_raw is None or bse_raw.empty:
         return pd.DataFrame(columns=["isin", "bse_code", "bse_symbol", "bse_name", "bse_group"])
-    last = bse_raw.sort_values("date").drop_duplicates("isin", keep="last")
+    last = bse_raw.sort_values("date").drop_duplicates("bse_code", keep="last").drop_duplicates("isin", keep="last")
     return pd.DataFrame({
         "isin": last["isin"], "bse_code": last["bse_code"], "bse_symbol": last["ticker"],
         "bse_name": last["name"], "bse_group": last["series"],

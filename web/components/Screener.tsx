@@ -75,6 +75,9 @@ const COLUMNS: { key: SortKey; label: string; title?: string; num?: boolean }[] 
 
 const PAGE = 50;
 
+// ISIN is unique across exchanges; a BSE-only ticker can match another company's NSE symbol
+const rowKey = (s: Stock) => s.isin ?? s.symbol;
+
 function toCsv(rows: Stock[]) {
   const keys = Object.keys(rows[0] ?? {}).filter((k) => k !== "spark") as (keyof Stock)[];
   const esc = (v: unknown) => (v == null ? "" : /[",\n]/.test(String(v)) ? `"${String(v).replace(/"/g, '""')}"` : String(v));
@@ -265,8 +268,8 @@ export function Screener() {
               </tr>
             )}
             {visible.map((s) => (
-              <Fragment key={s.symbol}>
-                <tr className={`row ${open === s.symbol ? "open" : ""}`} onClick={() => setOpen(open === s.symbol ? null : s.symbol)}>
+              <Fragment key={rowKey(s)}>
+                <tr className={`row ${open === rowKey(s) ? "open" : ""}`} onClick={() => setOpen(open === rowKey(s) ? null : rowKey(s))}>
                   <td className="stock">
                     <strong>{s.symbol}</strong>
                     <span className="muted name">
@@ -302,7 +305,7 @@ export function Screener() {
                     {!s.tradable && s.status === "Active" && s.price_source === "NSE" && <span className="tag dim">Untradable</span>}
                   </td>
                 </tr>
-                {open === s.symbol && (
+                {open === rowKey(s) && (
                   <tr className="detail">
                     <td colSpan={COLUMNS.length + 2}>
                       <div className="detail-grid">
