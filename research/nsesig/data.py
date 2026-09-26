@@ -122,26 +122,63 @@ def fetch_day(day: pd.Timestamp, session=None) -> pd.DataFrame | None:
     return prices
 
 
-def build_cache(start: str, end: str, cache_dir: str | Path, pause: float = 0.5) -> None:
-    """Download each trading day into `cache_dir/YYYY/YYYY-MM-DD.parquet`. Skips days already cached."""
+def build_cache(start: str, end: str, cache_dir: str | Path, pause: float = 0.5, max_initial_errors: int = 5) -> dict:
+    """Download each trading day into `cache_dir/YYYY/YYYY-MM-DD.parquet`.
+
+    Resumable: skips days already cached and days recorded in `no_file.txt`
+    (holidays). Per-day errors are logged and skipped; if the first
+    `max_initial_errors` attempts all fail, NSE is probably blocking us and it aborts.
+    """
     import requests
 
     cache = Path(cache_dir)
+    cache.mkdir(parents=True, exist_ok=True)
+    no_file_path = cache / "no_file.txt"
+    no_file = set(no_file_path.read_text().split()) if no_file_path.exists() else set()
     session = requests.Session()
-    session.get("https://www.nseindia.com", headers=HEADERS, timeout=30)  # cookies
+    try:
+        session.get("https://www.nseindia.com", headers=HEADERS, timeout=30)  # cookies
+    except Exception as e:
+        print(f"warning: NSE homepage request failed ({e}); trying archives anyway")
+    stats = {"fetched": 0, "cached": 0, "no_file": 0, "errors": 0}
+    attempts = 0
     for day in pd.bdate_range(start, end):
-        path = cache / str(day.year) / f"{day.date()}.parquet"
+        key = str(day.date())
+        path = cache / str(day.year) / f"{key}.parquet"
         if path.exists():
+            stats["cached"] += 1
             continue
-        df = fetch_day(day, session)
+        if key in no_file:
+            stats["no_file"] += 1
+            continue
+        attempts += 1
+        try:
+            df = fetch_day(day, session)
+        except Exception as e:
+            stats["errors"] += 1
+            print(f"{key}: error {e}")
+            if attempts == stats["errors"] == max_initial_errors:
+                raise RuntimeError(f"first {max_initial_errors} downloads all failed; NSE is likely blocking this IP") from e
+            time.sleep(pause)
+            continue
         if df is None:
-            continue
-        path.parent.mkdir(parents=True, exist_ok=True)
-        df.to_parquet(path, index=False)
+            stats["no_file"] += 1
+            with no_file_path.open("a") as f:
+                f.write(key + "\n")
+        else:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            df.to_parquet(path, index=False)
+            stats["fetched"] += 1
+            if stats["fetched"] % 50 == 0:
+                print(f"{key}: {stats}", flush=True)
         time.sleep(pause)
+    print(f"done: {stats}")
+    return stats
 
 
-def load_cache(cache_dir: str | Path, start: str | None = None, end: str | None = None) -> pd.DataFrame:
+def load_cache(
+    cache_dir: str | Path, start: str | None = None, end: str | None = None, series: tuple = ("EQ",)
+) -> pd.DataFrame:
     files = sorted(Path(cache_dir).glob("*/*.parquet"))
     if start:
         files = [f for f in files if f.stem >= str(pd.Timestamp(start).date())]
@@ -149,7 +186,9 @@ def load_cache(cache_dir: str | Path, start: str | None = None, end: str | None 
         files = [f for f in files if f.stem <= str(pd.Timestamp(end).date())]
     if not files:
         raise FileNotFoundError(f"no cached bhavcopies in {cache_dir}")
-    return prepare_panel(pd.concat((pd.read_parquet(f) for f in files), ignore_index=True))
+    frames = (pd.read_parquet(f) for f in files)
+    df = pd.concat((f[f["series"].isin(series)] if series else f for f in frames), ignore_index=True)
+    return prepare_panel(df)
 
 
 def fetch_yfinance(symbols: list[str], start: str, end: str) -> pd.DataFrame:
