@@ -49,7 +49,7 @@ if __name__ == "__main__":
         panel, refs = make_panel(n_symbols=60, start="2025-01-01"), None
     else:
         start = (pd.Timestamp.today() - pd.Timedelta(days=500)).strftime("%Y-%m-%d")
-        panel, refs = load_cache(a.cache, start=start), fetch_reference()
+        panel, refs = load_cache(a.cache, start=start, log=True), fetch_reference()
         print("reference lists:", {k: len(v) for k, v in refs.items()})
     snap, meta = build_snapshot(panel, refs)
     out = Path(a.out)

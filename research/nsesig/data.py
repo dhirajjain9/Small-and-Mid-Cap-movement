@@ -179,7 +179,7 @@ def build_cache(start: str, end: str, cache_dir: str | Path, pause: float = 0.5,
 
 
 def load_cache(
-    cache_dir: str | Path, start: str | None = None, end: str | None = None, series: tuple = ("EQ",)
+    cache_dir: str | Path, start: str | None = None, end: str | None = None, series: tuple = ("EQ",), log: bool = False
 ) -> pd.DataFrame:
     files = sorted(Path(cache_dir).glob("*/*.parquet"))
     if start:
@@ -190,7 +190,7 @@ def load_cache(
         raise FileNotFoundError(f"no cached bhavcopies in {cache_dir}")
     frames = (pd.read_parquet(f) for f in files)
     df = pd.concat((f[f["series"].isin(series)] if series else f for f in frames), ignore_index=True)
-    return prepare_panel(df)
+    return prepare_panel(df, log=log)
 
 
 def fetch_yfinance(symbols: list[str], start: str, end: str) -> pd.DataFrame:
@@ -217,32 +217,60 @@ def fetch_yfinance(symbols: list[str], start: str, end: str) -> pd.DataFrame:
 
 # --------------------------------------------------------------------------- cleaning
 
-def adjust_for_corporate_actions(df: pd.DataFrame) -> pd.DataFrame:
+# Price ratios after common splits (face value 10->5 = 1/2, 10->2 = 1/5, 5->2 = 2/5, ...) and
+# bonus issues (1:1 = 1/2, 1:2 = 2/3, 2:1 = 1/3, 3:1 = 1/4). Only drops of 30%+ are considered,
+# which a stock in a 20% band cannot make on its own.
+_SPLIT_RATIOS = np.array([2 / 3, 1 / 2, 2 / 5, 1 / 3, 1 / 4, 1 / 5, 1 / 10])
+_SPLIT_TOL = 0.08
+
+
+def _infer_split_step(open_: pd.Series, close: pd.Series, last_close: pd.Series) -> pd.Series:
+    """Step factor for ex-dates NSE did not restate: open and close both sit near a standard ratio."""
+    gap_open = (open_ / last_close).to_numpy()
+    gap_close = (close / last_close).to_numpy()
+    out = np.ones(len(open_))
+    for r in _SPLIT_RATIOS:
+        hit = (np.abs(gap_open / r - 1) < _SPLIT_TOL) & (np.abs(gap_close / r - 1) < _SPLIT_TOL + 0.1)
+        out = np.where((out == 1) & hit, r, out)
+    return pd.Series(out, index=open_.index)
+
+
+def adjust_for_corporate_actions(df: pd.DataFrame, log: bool = False) -> pd.DataFrame:
     """Back-adjust OHLC and volume for splits/bonuses.
 
-    NSE restates PREV_CLOSE on the ex-date, so prev_close[t] / close[t-1] is the
-    adjustment factor. Anything within 0.5% of 1 is treated as noise and ignored.
+    NSE usually restates PREV_CLOSE on the ex-date, so prev_close[t] / close[t-1] is
+    the adjustment factor (moves within 0.5% of 1 are noise). When it did not, a gap to
+    a standard split/bonus ratio is used instead (`_infer_split_step`).
     Adds `adj_factor` (cumulative, applied to history before each ex-date).
     """
     df = df.sort_values(["symbol", "date"]).copy()
     last_close = df.groupby("symbol")["close"].shift(1)
-    step = (df["prev_close"] / last_close).where(lambda s: (s - 1).abs() > 0.005, 1.0).fillna(1.0)
+    nse_step = (df["prev_close"] / last_close).where(lambda s: (s - 1).abs() > 0.005, 1.0).fillna(1.0)
+    inferred = _infer_split_step(df["open"], df["close"], last_close)
+    step = nse_step.where(nse_step != 1.0, inferred)
+    if log:
+        ev = df.loc[step != 1.0, ["date", "symbol"]].assign(step=step[step != 1.0], source=np.where(nse_step[step != 1.0] != 1.0, "nse", "inferred"))
+        big = ev[(ev["step"] - 1).abs() > 0.05]
+        print(f"corporate-action adjustments: {len(big)} (> 5%), of which inferred: {(big['source'] == 'inferred').sum()}")
+        print(big.tail(40).to_string(index=False))
     # factor for row t = product of steps strictly after t
     rev_cum = step[::-1].groupby(df["symbol"][::-1]).cumprod()[::-1]
     factor = rev_cum / step
     for c in ("open", "high", "low", "close", "prev_close"):
         df[c] = df[c] * factor
+    # the ex-date's own prev_close is still on the old basis when NSE did not restate it
+    df["prev_close"] = df["prev_close"] * np.where((nse_step == 1.0) & (inferred != 1.0), inferred, 1.0)
     df["volume"] = df["volume"] / factor
     df["adj_factor"] = factor
     return df
 
 
-def prepare_panel(df: pd.DataFrame, adjust: bool = True) -> pd.DataFrame:
+def prepare_panel(df: pd.DataFrame, adjust: bool = True, log: bool = False) -> pd.DataFrame:
     df = df.copy()
     df["date"] = pd.to_datetime(df["date"])
     df = df.dropna(subset=["open", "high", "low", "close"])
     df = df[(df["close"] > 0) & (df["volume"] > 0)]
     df = df.drop_duplicates(["symbol", "series", "date"], keep="last")
     if adjust and "prev_close" in df and df["prev_close"].notna().any():
-        df = adjust_for_corporate_actions(df)
+        df = adjust_for_corporate_actions(df, log=log)
     return df.sort_values(["symbol", "date"]).reset_index(drop=True)

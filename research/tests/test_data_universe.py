@@ -72,3 +72,25 @@ def test_tradability_filter():
     assert last.to_dict() == {"ASM": False, "BAND5": False, "NOBAND": True, "OK": True, "THIN": False, "TINY": False}
     # position of ₹20 lakh vs 1% of ₹30 cr ADTV = ₹30 lakh -> ok; ₹50 lakh would not be
     assert not tradability_mask(df, UniverseConfig(), position_value=50e5)["tradable"].any()
+
+
+def test_split_inferred_when_prev_close_not_restated():
+    # 1:5 split on day 3, but prev_close still shows the old price
+    df = pd.DataFrame({
+        "date": pd.bdate_range("2024-01-01", periods=4), "symbol": "X",
+        "open": [500, 505, 101, 102], "high": [505, 510, 103, 104], "low": [495, 500, 99, 100],
+        "close": [500, 505, 102, 103], "prev_close": [500, 500, 505, 102], "volume": [10, 10, 50, 50],
+    })
+    adj = adjust_for_corporate_actions(df)
+    assert adj["close"].tolist() == pytest.approx([100, 101, 102, 103])
+    assert adj["volume"].tolist() == pytest.approx([50, 50, 50, 50])
+    assert adj["prev_close"].iloc[2] == pytest.approx(101)
+
+
+def test_real_crash_in_band_not_treated_as_split():
+    df = pd.DataFrame({
+        "date": pd.bdate_range("2024-01-01", periods=3), "symbol": "X",
+        "open": [100, 100, 80], "high": [101, 101, 82], "low": [99, 99, 80], "close": [100, 100, 80],
+        "prev_close": [100, 100, 100], "volume": [10, 10, 30],
+    })
+    assert adjust_for_corporate_actions(df)["close"].tolist() == pytest.approx([100, 100, 80])
