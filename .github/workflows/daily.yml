@@ -8,9 +8,12 @@ on:
   schedule:
     - cron: "0 14 * * 1-5" # 7:30 PM IST
   workflow_dispatch:
+  workflow_run:
+    workflows: [fundamentals]
+    types: [completed]
   push:
     branches: [claude/bold-ramanujan-tj3yqi]
-    paths: [".github/workflows/daily.yml", "pipeline/**", "research/nsesig/**", "data/reference/**"]
+    paths: [".github/workflows/daily.yml", "pipeline/**", "research/nsesig/**", "data/reference/**", "data/fundamentals/**"]
 
 permissions:
   contents: write

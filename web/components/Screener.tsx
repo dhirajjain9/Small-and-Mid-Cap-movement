@@ -7,7 +7,7 @@ import { Sparkline } from "./Sparkline";
 
 type SortKey = keyof Pick<
   Stock,
-  "symbol" | "close" | "chg_1d" | "chg_1w" | "chg_1m" | "chg_1y" | "from_high" | "volume_ratio" | "deliv_pct" | "adtv_cr" | "turnover_cr"
+  "symbol" | "close" | "mcap_cr" | "pe" | "chg_1d" | "chg_1w" | "chg_1m" | "chg_1y" | "from_high" | "volume_ratio" | "deliv_pct" | "adtv_cr" | "turnover_cr"
 >;
 
 const CAPS: (Cap | "Other")[] = ["Large", "Mid", "Small", "Micro", "Other"];
@@ -63,6 +63,8 @@ const PRESETS: { id: string; label: string; hint: string; test: (s: Stock) => bo
 const COLUMNS: { key: SortKey; label: string; title?: string; num?: boolean }[] = [
   { key: "symbol", label: "Stock" },
   { key: "close", label: "Price", num: true },
+  { key: "mcap_cr", label: "Mcap ₹cr", title: "Market cap = last close × shares outstanding, ₹ crore", num: true },
+  { key: "pe", label: "P/E", title: "Last close ÷ trailing 12-month EPS", num: true },
   { key: "chg_1d", label: "1D", num: true },
   { key: "chg_1w", label: "1W", num: true },
   { key: "chg_1m", label: "1M", num: true },
@@ -94,6 +96,8 @@ export function Screener() {
   const [caps, setCaps] = useState<Set<string>>(new Set());
   const [tradableOnly, setTradableOnly] = useState(false);
   const [minAdtv, setMinAdtv] = useState("");
+  const [minMcap, setMinMcap] = useState("");
+  const [maxPe, setMaxPe] = useState("");
   const [industry, setIndustry] = useState("");
   const [exchange, setExchange] = useState("");
   const [status, setStatus] = useState("");
@@ -122,6 +126,8 @@ export function Screener() {
     const exTest = EXCHANGES.find((e) => e.id === exchange)!.test;
     const needle = q.trim().toLowerCase();
     const adtv = parseFloat(minAdtv);
+    const mcapMin = parseFloat(minMcap);
+    const peMax = parseFloat(maxPe);
     const out = stocks.filter(
       (s) =>
         test(s) &&
@@ -135,7 +141,9 @@ export function Screener() {
         (caps.size === 0 || caps.has(s.cap ?? "Other")) &&
         (!tradableOnly || s.tradable) &&
         (!industry || s.industry === industry) &&
-        (isNaN(adtv) || (s.adtv_cr ?? 0) >= adtv),
+        (isNaN(adtv) || (s.adtv_cr ?? 0) >= adtv) &&
+        (isNaN(mcapMin) || (s.mcap_cr ?? 0) >= mcapMin) &&
+        (isNaN(peMax) || (s.pe != null && s.pe <= peMax)),
     );
     const { key, dir } = sort;
     return out.sort((a, b) => {
@@ -145,9 +153,9 @@ export function Screener() {
       if (y == null) return -1;
       return (x < y ? -1 : x > y ? 1 : 0) * dir;
     });
-  }, [stocks, preset, q, caps, tradableOnly, industry, exchange, status, minAdtv, sort]);
+  }, [stocks, preset, q, caps, tradableOnly, industry, exchange, status, minAdtv, minMcap, maxPe, sort]);
 
-  useEffect(() => setPage(0), [preset, q, caps, tradableOnly, industry, exchange, status, minAdtv, sort]);
+  useEffect(() => setPage(0), [preset, q, caps, tradableOnly, industry, exchange, status, minAdtv, minMcap, maxPe, sort]);
 
   const pages = Math.max(1, Math.ceil(rows.length / PAGE));
   const visible = rows.slice(page * PAGE, page * PAGE + PAGE);
@@ -182,7 +190,10 @@ export function Screener() {
               : "Loading…"}
           </p>
         </div>
-        <p className="disclaimer">Personal research tool. Not investment advice.</p>
+        <p className="disclaimer">
+          Personal research tool. Not investment advice.
+          {meta?.eps_as_of && <> P/E uses trailing EPS from Yahoo Finance, refreshed {shortDate(meta.eps_as_of)}.</>}
+        </p>
       </header>
 
       {error && <div className="notice">{error}</div>}
@@ -227,6 +238,14 @@ export function Screener() {
         <label className="field">
           Min ADTV ₹cr
           <input inputMode="decimal" value={minAdtv} onChange={(e) => setMinAdtv(e.target.value)} placeholder="0" />
+        </label>
+        <label className="field">
+          Min mcap ₹cr
+          <input inputMode="decimal" value={minMcap} onChange={(e) => setMinMcap(e.target.value)} placeholder="0" />
+        </label>
+        <label className="field">
+          Max P/E
+          <input inputMode="decimal" value={maxPe} onChange={(e) => setMaxPe(e.target.value)} placeholder="any" />
         </label>
         <label className="check">
           <input type="checkbox" checked={tradableOnly} onChange={(e) => setTradableOnly(e.target.checked)} />
@@ -284,6 +303,8 @@ export function Screener() {
                       <span className="muted stale">last {shortDate(s.last_trade)}</span>
                     )}
                   </td>
+                  <td className="num">{num(s.mcap_cr, 0)}</td>
+                  <td className={`num ${s.loss_making ? "down" : ""}`}>{s.pe != null ? num(s.pe, 1) : s.loss_making ? "Loss" : "–"}</td>
                   {(["chg_1d", "chg_1w", "chg_1m", "chg_1y"] as const).map((k) => (
                     <td key={k} className={`num ${tone(s[k])}`}>
                       {pct(s[k])}
@@ -318,6 +339,9 @@ export function Screener() {
                           <dt>Listed on</dt><dd>{s.exchange ?? "–"}{s.segment === "SME" ? " (SME)" : ""}</dd>
                           <dt>ISIN</dt><dd>{s.isin ?? "–"}{s.bse_code ? ` · BSE ${s.bse_code}` : ""}</dd>
                           <dt>3M / 6M</dt><dd><span className={tone(s.chg_3m)}>{pct(s.chg_3m)}</span> / <span className={tone(s.chg_6m)}>{pct(s.chg_6m)}</span></dd>
+                          <dt>Market cap</dt><dd>{s.mcap_cr == null ? "–" : `₹${num(s.mcap_cr, 0)} cr`}</dd>
+                          <dt>EPS (TTM)</dt><dd>{s.eps_ttm == null ? "–" : `₹${num(s.eps_ttm, 2)}`}{s.pe != null ? ` · P/E ${num(s.pe, 1)}` : ""}</dd>
+                          <dt>Shares</dt><dd>{s.shares == null ? "–" : `${num(s.shares / 1e7, 2)} cr`}</dd>
                           <dt>52W range</dt><dd>{price(s.low_52w)} – {price(s.high_52w)}</dd>
                           <dt>Today&apos;s value</dt><dd>{s.turnover_cr == null ? "No trade today" : `₹${num(s.turnover_cr, 1)} cr`}</dd>
                         </dl>

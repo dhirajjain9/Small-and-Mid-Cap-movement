@@ -16,6 +16,7 @@ import numpy as np  # noqa: E402
 import pandas as pd  # noqa: E402
 
 from nsesig.data import load_cache  # noqa: E402
+from nsesig.fundamentals import fetch_nse_mcap, load_yahoo  # noqa: E402
 from nsesig.listings import fetch_nse_lists, load_bse_master  # noqa: E402
 from nsesig.screener import build_snapshot, fetch_reference  # noqa: E402
 from nsesig.synthetic import make_panel  # noqa: E402
@@ -44,6 +45,7 @@ if __name__ == "__main__":
     ap.add_argument("--cache", default=str(ROOT / "research/data/bhav"))
     ap.add_argument("--bse-cache", default=str(ROOT / "research/data/bse"))
     ap.add_argument("--ref-dir", default=str(ROOT / "data/reference"), help="optional BSE 'List of Scrips' exports")
+    ap.add_argument("--yahoo", default=str(ROOT / "data/fundamentals/yahoo.csv"), help="weekly EPS/shares file")
     ap.add_argument("--out", default=str(ROOT / "web/public/data"))
     ap.add_argument("--synthetic", action="store_true", help="fake data, no network (for local UI work)")
     a = ap.parse_args()
@@ -62,7 +64,11 @@ if __name__ == "__main__":
         print("reference lists:", {k: len(v) for k, v in refs.items()},
               "| NSE listings:", nse_lists["segment"].value_counts().to_dict(),
               "| BSE master rows:", len(bse_master), "| BSE scrips traded:", 0 if bse is None else bse["isin"].nunique())
-        snap, meta = build_snapshot(nse, refs, bse_panel=bse, nse_lists=nse_lists, bse_master=bse_master)
+        nse_mcap = fetch_nse_mcap(nse["date"].max())
+        yahoo = load_yahoo(a.yahoo)
+        print("NSE market-cap rows:", 0 if nse_mcap is None else len(nse_mcap), "| Yahoo rows:", len(yahoo))
+        snap, meta = build_snapshot(nse, refs, bse_panel=bse, nse_lists=nse_lists, bse_master=bse_master,
+                                    nse_mcap=nse_mcap, yahoo=yahoo)
     out = Path(a.out)
     out.mkdir(parents=True, exist_ok=True)
     (out / "stocks.json").write_text(json.dumps(to_json_records(snap), separators=(",", ":")))

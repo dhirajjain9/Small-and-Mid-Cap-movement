@@ -86,3 +86,29 @@ def test_calendar_horizons():
     row = snap.iloc[0]
     assert row["chg_1y"] == pytest.approx(s.iloc[-1] / s[: pd.Timestamp("2025-06-30")].iloc[-1] - 1)
     assert row["chg_1w"] == pytest.approx(s.iloc[-1] / s[: pd.Timestamp("2026-06-23")].iloc[-1] - 1)
+
+
+def test_market_cap_and_pe():
+    from nsesig.fundamentals import parse_nse_mcap
+
+    nse = make_panel(n_symbols=2, start="2025-01-01", end="2026-06-30")
+    bse_src = make_panel(n_symbols=1, start="2025-01-01", end="2026-06-30", seed=3)
+    bse = _bse_panel(bse_src, ISIN["D"], "500004")
+    nse_lists = pd.DataFrame({"isin": [ISIN["A"], ISIN["B"]], "nse_symbol": ["SYM00", "SYM01"], "name": ["A", "B"],
+                              "nse_series": "EQ", "listed_on": pd.NaT, "segment": "Main"})
+    mcap_csv = ("Trade Date,Symbol,Series,Security Name,Category,Last Trade Date,Face Value(Rs.),Issue Size,"
+                "Close Price/Paid up value(Rs.),Market Cap(Rs.)\n"
+                "30 JUN 2026,SYM00,EQ,A LTD,Listed,30 JUN 2026,10,500000000,100,1\n"
+                "30 JUN 2026,SYM01,EQ,B LTD,Listed,30 JUN 2026,10,1000000,100,1\n")
+    yahoo = pd.DataFrame({"isin": [ISIN["A"], ISIN["B"], ISIN["D"]], "yahoo_symbol": ["SYM00.NS", "SYM01.NS", "T500004.BO"],
+                          "eps_ttm": [10.0, -2.0, 5.0], "shares": [1.0, 1.0, 2e7],
+                          "fetched_at": pd.Timestamp("2026-06-27"), "error": None})
+    snap, meta = build_snapshot(nse, bse_panel=bse, nse_lists=nse_lists, nse_mcap=parse_nse_mcap(mcap_csv), yahoo=yahoo)
+    by = snap.set_index("isin")
+    a, b, d = by.loc[ISIN["A"]], by.loc[ISIN["B"]], by.loc[ISIN["D"]]
+    assert a["mcap_cr"] == pytest.approx(a["close"] * 5e8 / 1e7)  # NSE issue size beats Yahoo's shares
+    assert a["pe"] == pytest.approx(a["close"] / 10)
+    assert pd.isna(b["pe"]) and b["loss_making"]
+    assert b["mcap_cr"] < 1000 and not b["tradable"]  # below the ₹1,000 cr floor
+    assert d["mcap_cr"] == pytest.approx(d["close"] * 2e7 / 1e7)  # BSE-only: Yahoo shares
+    assert meta["with_mcap"] == 3 and meta["with_pe"] == 2 and meta["eps_as_of"] == "2026-06-27"

@@ -175,6 +175,8 @@ def build_snapshot(
     bse_panel: pd.DataFrame | None = None,
     nse_lists: pd.DataFrame | None = None,
     bse_master: pd.DataFrame | None = None,
+    nse_mcap: pd.DataFrame | None = None,
+    yahoo: pd.DataFrame | None = None,
 ) -> tuple[pd.DataFrame, dict]:
     """Return (one row per company, metadata).
 
@@ -230,8 +232,14 @@ def build_snapshot(
         out[c] = out[c].fillna(False).astype(bool)
     out["status"] = [listings.status_for(r, as_of) for r in out.to_dict("records")]
 
+    from .fundamentals import add_valuation
+
+    out = add_valuation(out, nse_mcap, yahoo)
+    # the tradability filter's market-cap floor, now that market cap is known
+    out["tradable"] = out["tradable"] & ~(out["mcap_cr"] < cfg.min_mcap_cr)
+
     cols = ["symbol", "name", "isin", "exchange", "segment", "status", "nse_symbol", "bse_code", "industry", "cap",
-            "price_source", *METRIC_COLS]
+            "price_source", "mcap_cr", "pe", "eps_ttm", "shares", "loss_making", *METRIC_COLS]
     for c in cols:
         if c not in out:
             out[c] = None
@@ -244,6 +252,9 @@ def build_snapshot(
         "by_exchange": out["exchange"].value_counts().to_dict(),
         "by_status": out["status"].value_counts().to_dict(),
         "bse_master_file": bool(bse_master is not None and len(bse_master)),
+        "with_mcap": int(out["mcap_cr"].notna().sum()),
+        "with_pe": int(out["pe"].notna().sum()),
+        "eps_as_of": (yahoo["fetched_at"].max().strftime("%Y-%m-%d") if yahoo is not None and len(yahoo) else None),
         "universe": {"min_adtv_cr": cfg.min_adtv_cr, "bands": "20% or no band"},
     }
     out = out.sort_values(["turnover_cr", "adtv_cr"], ascending=False, na_position="last").reset_index(drop=True)

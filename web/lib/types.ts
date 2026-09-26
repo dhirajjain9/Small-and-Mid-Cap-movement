@@ -18,6 +18,11 @@ export interface Stock {
   industry: string | null;
   cap: Cap | null;
   close: number | null;
+  mcap_cr: number | null;
+  pe: number | null;
+  eps_ttm: number | null;
+  shares: number | null;
+  loss_making: boolean | null;
   chg_1d: number | null;
   chg_1w: number | null;
   chg_1m: number | null;
@@ -51,5 +56,8 @@ export interface Meta {
   by_exchange?: Record<string, number>;
   by_status?: Record<string, number>;
   bse_master_file?: boolean;
+  with_mcap?: number;
+  with_pe?: number;
+  eps_as_of?: string | null;
   universe: { min_adtv_cr: number; bands: string };
 }
