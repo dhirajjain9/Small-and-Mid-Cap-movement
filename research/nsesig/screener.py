@@ -218,6 +218,10 @@ def build_snapshot(
         if c in b:
             metrics[c] = a[c].where(~use_bse, b[c])
     metrics["price_source"] = np.where(metrics["last_trade"].isna(), None, np.where(use_bse, "BSE", "NSE"))
+    # Traded value is liquidity across both exchanges: add NSE and BSE for dual-listed stocks.
+    both = pd.concat([a["turnover_cr"], b["turnover_cr"]], axis=1)
+    metrics["turnover_cr"] = both.sum(axis=1, min_count=1)
+    metrics["adtv_cr"] = pd.concat([a["adtv_cr"], b["adtv_cr"]], axis=1).sum(axis=1, min_count=1)
     out = pd.concat([master.reset_index(drop=True), metrics], axis=1)
 
     if ref is not None:
@@ -239,7 +243,8 @@ def build_snapshot(
     out["tradable"] = out["tradable"] & ~(out["mcap_cr"] < cfg.min_mcap_cr)
 
     cols = ["symbol", "name", "isin", "exchange", "segment", "status", "nse_symbol", "bse_code", "industry", "cap",
-            "price_source", "mcap_cr", "pe", "eps_ttm", "shares", "loss_making", *METRIC_COLS]
+            "price_source", "mcap_cr", "pe", "eps_ttm", "shares", "loss_making", "revenue_cr", "revenue_growth",
+            "net_income_cr", *METRIC_COLS]
     for c in cols:
         if c not in out:
             out[c] = None
@@ -254,6 +259,7 @@ def build_snapshot(
         "bse_master_file": bool(bse_master is not None and len(bse_master)),
         "with_mcap": int(out["mcap_cr"].notna().sum()),
         "with_pe": int(out["pe"].notna().sum()),
+        "with_revenue": int(out["revenue_cr"].notna().sum()),
         "eps_as_of": (yahoo["fetched_at"].max().strftime("%Y-%m-%d") if yahoo is not None and len(yahoo) else None),
         "universe": {"min_adtv_cr": cfg.min_adtv_cr, "bands": "20% or no band"},
     }

@@ -102,6 +102,8 @@ def test_market_cap_and_pe():
                 "30 JUN 2026,SYM01,EQ,B LTD,Listed,30 JUN 2026,10,1000000,100,1\n")
     yahoo = pd.DataFrame({"isin": [ISIN["A"], ISIN["B"], ISIN["D"]], "yahoo_symbol": ["SYM00.NS", "SYM01.NS", "T500004.BO"],
                           "eps_ttm": [10.0, -2.0, 5.0], "shares": [1.0, 1.0, 2e7],
+                          "revenue_ttm": [5e10, 1e9, 2e9], "revenue_growth": [0.12, -0.05, None],
+                          "net_income_ttm": [4e9, -1e8, 3e8], "fin_currency": ["INR", "USD", None], "v": 2,
                           "fetched_at": pd.Timestamp("2026-06-27"), "error": None})
     snap, meta = build_snapshot(nse, bse_panel=bse, nse_lists=nse_lists, nse_mcap=parse_nse_mcap(mcap_csv), yahoo=yahoo)
     by = snap.set_index("isin")
@@ -112,3 +114,17 @@ def test_market_cap_and_pe():
     assert b["mcap_cr"] < 1000 and not b["tradable"]  # below the ₹1,000 cr floor
     assert d["mcap_cr"] == pytest.approx(d["close"] * 2e7 / 1e7)  # BSE-only: Yahoo shares
     assert meta["with_mcap"] == 3 and meta["with_pe"] == 2 and meta["eps_as_of"] == "2026-06-27"
+    assert a["revenue_cr"] == pytest.approx(5000) and a["revenue_growth"] == pytest.approx(0.12)
+    assert pd.isna(b["revenue_cr"])  # USD financials are skipped, not mixed in
+    assert d["revenue_cr"] == pytest.approx(200) and meta["with_revenue"] == 2
+
+
+def test_traded_value_adds_nse_and_bse():
+    nse = make_panel(n_symbols=1, start="2025-01-01", end="2026-06-30")
+    bse = _bse_panel(make_panel(n_symbols=1, start="2025-01-01", end="2026-06-30", seed=3), ISIN["A"], "500001", "A")
+    lists = pd.DataFrame({"isin": [ISIN["A"]], "nse_symbol": ["SYM00"], "name": ["A"], "nse_series": "EQ",
+                          "listed_on": pd.NaT, "segment": "Main"})
+    snap, _ = build_snapshot(nse, bse_panel=bse, nse_lists=lists)
+    last_nse = nse.sort_values("date")["turnover"].iloc[-1]
+    last_bse = bse.sort_values("date")["turnover"].iloc[-1]
+    assert snap.iloc[0]["turnover_cr"] == pytest.approx((last_nse + last_bse) / 1e7)

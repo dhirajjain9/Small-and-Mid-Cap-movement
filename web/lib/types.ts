@@ -23,6 +23,9 @@ export interface Stock {
   eps_ttm: number | null;
   shares: number | null;
   loss_making: boolean | null;
+  revenue_cr: number | null;
+  revenue_growth: number | null;
+  net_income_cr: number | null;
   chg_1d: number | null;
   chg_1w: number | null;
   chg_1m: number | null;
@@ -58,6 +61,7 @@ export interface Meta {
   bse_master_file?: boolean;
   with_mcap?: number;
   with_pe?: number;
+  with_revenue?: number;
   eps_as_of?: string | null;
   universe: { min_adtv_cr: number; bands: string };
 }

@@ -7,7 +7,7 @@ import { Sparkline } from "./Sparkline";
 
 type SortKey = keyof Pick<
   Stock,
-  "symbol" | "close" | "mcap_cr" | "pe" | "chg_1d" | "chg_1w" | "chg_1m" | "chg_1y" | "from_high" | "volume_ratio" | "deliv_pct" | "adtv_cr" | "turnover_cr"
+  "symbol" | "close" | "mcap_cr" | "pe" | "revenue_cr" | "revenue_growth" | "chg_1d" | "chg_1w" | "chg_1m" | "chg_1y" | "from_high" | "volume_ratio" | "deliv_pct" | "adtv_cr" | "turnover_cr"
 >;
 
 const CAPS: (Cap | "Other")[] = ["Large", "Mid", "Small", "Micro", "Other"];
@@ -65,6 +65,8 @@ const COLUMNS: { key: SortKey; label: string; title?: string; num?: boolean }[] 
   { key: "close", label: "Price", num: true },
   { key: "mcap_cr", label: "Mcap ₹cr", title: "Market cap = last close × shares outstanding, ₹ crore", num: true },
   { key: "pe", label: "P/E", title: "Last close ÷ trailing 12-month EPS", num: true },
+  { key: "revenue_cr", label: "Revenue ₹cr", title: "Revenue (sales), trailing 12 months, ₹ crore", num: true },
+  { key: "revenue_growth", label: "Rev growth", title: "Revenue growth of the latest quarter vs the same quarter last year", num: true },
   { key: "chg_1d", label: "1D", num: true },
   { key: "chg_1w", label: "1W", num: true },
   { key: "chg_1m", label: "1M", num: true },
@@ -72,7 +74,7 @@ const COLUMNS: { key: SortKey; label: string; title?: string; num?: boolean }[] 
   { key: "from_high", label: "vs 52W high", title: "% below the 52-week high", num: true },
   { key: "volume_ratio", label: "Vol ×", title: "Today's volume ÷ 50-day median", num: true },
   { key: "deliv_pct", label: "Deliv %", title: "Delivery % of traded quantity", num: true },
-  { key: "adtv_cr", label: "ADTV ₹cr", title: "20-day average traded value, ₹ crore", num: true },
+  { key: "adtv_cr", label: "Avg traded ₹cr", title: "Average daily traded value (price × shares traded) over 20 sessions, NSE + BSE, ₹ crore. Not revenue.", num: true },
 ];
 
 const PAGE = 50;
@@ -98,6 +100,8 @@ export function Screener() {
   const [minAdtv, setMinAdtv] = useState("");
   const [minMcap, setMinMcap] = useState("");
   const [maxPe, setMaxPe] = useState("");
+  const [minRev, setMinRev] = useState("");
+  const [minGrowth, setMinGrowth] = useState("");
   const [industry, setIndustry] = useState("");
   const [exchange, setExchange] = useState("");
   const [status, setStatus] = useState("");
@@ -128,6 +132,8 @@ export function Screener() {
     const adtv = parseFloat(minAdtv);
     const mcapMin = parseFloat(minMcap);
     const peMax = parseFloat(maxPe);
+    const revMin = parseFloat(minRev);
+    const growthMin = parseFloat(minGrowth) / 100;
     const out = stocks.filter(
       (s) =>
         test(s) &&
@@ -143,7 +149,9 @@ export function Screener() {
         (!industry || s.industry === industry) &&
         (isNaN(adtv) || (s.adtv_cr ?? 0) >= adtv) &&
         (isNaN(mcapMin) || (s.mcap_cr ?? 0) >= mcapMin) &&
-        (isNaN(peMax) || (s.pe != null && s.pe <= peMax)),
+        (isNaN(peMax) || (s.pe != null && s.pe <= peMax)) &&
+        (isNaN(revMin) || (s.revenue_cr ?? -Infinity) >= revMin) &&
+        (isNaN(growthMin) || (s.revenue_growth ?? -Infinity) >= growthMin),
     );
     const { key, dir } = sort;
     return out.sort((a, b) => {
@@ -153,9 +161,9 @@ export function Screener() {
       if (y == null) return -1;
       return (x < y ? -1 : x > y ? 1 : 0) * dir;
     });
-  }, [stocks, preset, q, caps, tradableOnly, industry, exchange, status, minAdtv, minMcap, maxPe, sort]);
+  }, [stocks, preset, q, caps, tradableOnly, industry, exchange, status, minAdtv, minMcap, maxPe, minRev, minGrowth, sort]);
 
-  useEffect(() => setPage(0), [preset, q, caps, tradableOnly, industry, exchange, status, minAdtv, minMcap, maxPe, sort]);
+  useEffect(() => setPage(0), [preset, q, caps, tradableOnly, industry, exchange, status, minAdtv, minMcap, maxPe, minRev, minGrowth, sort]);
 
   const pages = Math.max(1, Math.ceil(rows.length / PAGE));
   const visible = rows.slice(page * PAGE, page * PAGE + PAGE);
@@ -192,7 +200,7 @@ export function Screener() {
         </div>
         <p className="disclaimer">
           Personal research tool. Not investment advice.
-          {meta?.eps_as_of && <> P/E uses trailing EPS from Yahoo Finance, refreshed {shortDate(meta.eps_as_of)}.</>}
+          {meta?.eps_as_of && <> P/E and revenue use trailing-12-month figures from Yahoo Finance, refreshed {shortDate(meta.eps_as_of)}.</>}
         </p>
       </header>
 
@@ -236,7 +244,15 @@ export function Screener() {
           ))}
         </select>
         <label className="field">
-          Min ADTV ₹cr
+          Min revenue ₹cr
+          <input inputMode="decimal" value={minRev} onChange={(e) => setMinRev(e.target.value)} placeholder="0" />
+        </label>
+        <label className="field">
+          Min rev growth %
+          <input inputMode="decimal" value={minGrowth} onChange={(e) => setMinGrowth(e.target.value)} placeholder="any" />
+        </label>
+        <label className="field" title="Average daily traded value, not revenue">
+          Min avg traded ₹cr
           <input inputMode="decimal" value={minAdtv} onChange={(e) => setMinAdtv(e.target.value)} placeholder="0" />
         </label>
         <label className="field">
@@ -305,6 +321,8 @@ export function Screener() {
                   </td>
                   <td className="num">{num(s.mcap_cr, 0)}</td>
                   <td className={`num ${s.loss_making ? "down" : ""}`}>{s.pe != null ? num(s.pe, 1) : s.loss_making ? "Loss" : "–"}</td>
+                  <td className="num">{num(s.revenue_cr, 0)}</td>
+                  <td className={`num ${tone(s.revenue_growth)}`}>{pct(s.revenue_growth, 0)}</td>
                   {(["chg_1d", "chg_1w", "chg_1m", "chg_1y"] as const).map((k) => (
                     <td key={k} className={`num ${tone(s[k])}`}>
                       {pct(s[k])}
@@ -341,9 +359,12 @@ export function Screener() {
                           <dt>3M / 6M</dt><dd><span className={tone(s.chg_3m)}>{pct(s.chg_3m)}</span> / <span className={tone(s.chg_6m)}>{pct(s.chg_6m)}</span></dd>
                           <dt>Market cap</dt><dd>{s.mcap_cr == null ? "–" : `₹${num(s.mcap_cr, 0)} cr`}</dd>
                           <dt>EPS (TTM)</dt><dd>{s.eps_ttm == null ? "–" : `₹${num(s.eps_ttm, 2)}`}{s.pe != null ? ` · P/E ${num(s.pe, 1)}` : ""}</dd>
+                          <dt>Revenue (TTM)</dt>
+                          <dd>{s.revenue_cr == null ? "–" : `₹${num(s.revenue_cr, 0)} cr`}{s.revenue_growth != null ? ` · ${pct(s.revenue_growth, 0)} YoY` : ""}</dd>
+                          <dt>Net profit (TTM)</dt><dd className={tone(s.net_income_cr)}>{s.net_income_cr == null ? "–" : `₹${num(s.net_income_cr, 0)} cr`}</dd>
                           <dt>Shares</dt><dd>{s.shares == null ? "–" : `${num(s.shares / 1e7, 2)} cr`}</dd>
                           <dt>52W range</dt><dd>{price(s.low_52w)} – {price(s.high_52w)}</dd>
-                          <dt>Today&apos;s value</dt><dd>{s.turnover_cr == null ? "No trade today" : `₹${num(s.turnover_cr, 1)} cr`}</dd>
+                          <dt>Traded today</dt><dd>{s.turnover_cr == null ? "No trade today" : `₹${num(s.turnover_cr, 1)} cr (NSE + BSE)`}</dd>
                         </dl>
                         <dl>
                           <dt>Delivery</dt>
