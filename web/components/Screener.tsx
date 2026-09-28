@@ -82,10 +82,64 @@ const PAGE = 50;
 // ISIN is unique across exchanges; a BSE-only ticker can match another company's NSE symbol
 const rowKey = (s: Stock) => s.isin ?? s.symbol;
 
+// Download columns: [header, field, kind]. "pct" fields are stored as fractions and exported as percentages.
+const CSV_COLUMNS: [string, keyof Stock, "pct" | "num" | "text" | "bool"][] = [
+  ["Symbol", "symbol", "text"],
+  ["Company", "name", "text"],
+  ["ISIN", "isin", "text"],
+  ["NSE symbol", "nse_symbol", "text"],
+  ["BSE code", "bse_code", "text"],
+  ["Listed on", "exchange", "text"],
+  ["Segment", "segment", "text"],
+  ["Status", "status", "text"],
+  ["Industry", "industry", "text"],
+  ["Cap bucket", "cap", "text"],
+  ["Last close (Rs)", "close", "num"],
+  ["Last trade date", "last_trade", "text"],
+  ["Market cap (Rs cr)", "mcap_cr", "num"],
+  ["P/E (TTM)", "pe", "num"],
+  ["EPS TTM (Rs)", "eps_ttm", "num"],
+  ["Revenue TTM (Rs cr)", "revenue_cr", "num"],
+  ["Revenue growth YoY (%)", "revenue_growth", "pct"],
+  ["Net profit TTM (Rs cr)", "net_income_cr", "num"],
+  ["Shares outstanding", "shares", "num"],
+  ["Change 1D (%)", "chg_1d", "pct"],
+  ["Change 1W (%)", "chg_1w", "pct"],
+  ["Change 1M (%)", "chg_1m", "pct"],
+  ["Change 3M (%)", "chg_3m", "pct"],
+  ["Change 6M (%)", "chg_6m", "pct"],
+  ["Change 1Y (%)", "chg_1y", "pct"],
+  ["52W high (Rs)", "high_52w", "num"],
+  ["52W low (Rs)", "low_52w", "num"],
+  ["vs 52W high (%)", "from_high", "pct"],
+  ["Volume (shares)", "volume", "num"],
+  ["Volume vs 50D median (x)", "volume_ratio", "num"],
+  ["Delivery (%)", "deliv_pct", "num"],
+  ["Delivery 20D avg (%)", "deliv_avg_20", "num"],
+  ["Traded value today, NSE+BSE (Rs cr)", "turnover_cr", "num"],
+  ["Avg traded value 20D, NSE+BSE (Rs cr)", "adtv_cr", "num"],
+  ["Price band (%, 0 = none)", "band", "num"],
+  ["Upper circuit", "locked_up", "bool"],
+  ["Lower circuit", "locked_down", "bool"],
+  ["Tradable", "tradable", "bool"],
+  ["Breakout today", "breakout", "bool"],
+  ["Last breakout", "last_breakout", "text"],
+  ["Loss-making", "loss_making", "bool"],
+  ["Price source", "price_source", "text"],
+];
+
 function toCsv(rows: Stock[]) {
-  const keys = Object.keys(rows[0] ?? {}).filter((k) => k !== "spark") as (keyof Stock)[];
   const esc = (v: unknown) => (v == null ? "" : /[",\n]/.test(String(v)) ? `"${String(v).replace(/"/g, '""')}"` : String(v));
-  return [keys.join(","), ...rows.map((r) => keys.map((k) => esc(r[k])).join(","))].join("\n");
+  const cell = (r: Stock, [, key, kind]: (typeof CSV_COLUMNS)[number]) => {
+    const v = r[key];
+    if (v == null) return "";
+    if (kind === "pct") return (Number(v) * 100).toFixed(2);
+    if (kind === "num") return String(Math.round(Number(v) * 100) / 100);
+    if (kind === "bool") return v ? "Yes" : "No";
+    return esc(v);
+  };
+  const lines = [CSV_COLUMNS.map((c) => esc(c[0])).join(","), ...rows.map((r) => CSV_COLUMNS.map((c) => cell(r, c)).join(","))];
+  return "\uFEFF" + lines.join("\r\n"); // BOM + CRLF so Excel opens it cleanly
 }
 
 export function Screener() {
