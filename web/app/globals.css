@@ -118,3 +118,30 @@ dd { margin: 0; }
   .detail-grid { grid-template-columns: 1fr; }
   .search { max-width: none; }
 }
+
+.views { display: flex; gap: 0; align-items: center; margin-bottom: 12px; }
+.views .muted { margin-right: 8px; }
+.seg { border: 1px solid var(--line); background: var(--panel); padding: 5px 14px; cursor: pointer; margin-left: -1px; }
+.seg:first-of-type { border-radius: 8px 0 0 8px; }
+.seg:last-of-type { border-radius: 0 8px 8px 0; }
+.seg.on { background: var(--accent-soft); border-color: var(--accent); color: var(--accent); position: relative; }
+
+/* Freeze panes: header row sticks to the top of the table, Stock + Price stick to the left. */
+.table-wrap { max-height: calc(100vh - 120px); overflow: auto; }
+th { z-index: 2; }
+.freeze1, .freeze2 { position: sticky; background: var(--panel); z-index: 1; }
+.freeze1 { left: 0; width: 230px; min-width: 230px; max-width: 230px; }
+.freeze2 { left: 230px; box-shadow: 1px 0 0 var(--line), 6px 0 8px -6px rgba(0, 0, 0, 0.18); }
+th.freeze1, th.freeze2 { z-index: 3; }
+.row:hover td, .row.open td { background: color-mix(in srgb, var(--accent-soft) 45%, var(--panel)); }
+.freeze1 .name { max-width: 210px; }
+@media (max-width: 720px) {
+  .freeze1 { width: 150px; min-width: 150px; max-width: 150px; }
+  .freeze2 { left: 150px; }
+  .freeze1 .name { max-width: 135px; }
+}
+.views { flex-wrap: wrap; row-gap: 6px; }
+@media (max-width: 720px) {
+  .views .muted { width: 100%; }
+  .seg { padding: 5px 10px; }
+}

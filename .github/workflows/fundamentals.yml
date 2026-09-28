@@ -1,0 +1,48 @@
+name: fundamentals
+
+# Weekly refresh of EPS and shares outstanding (Yahoo) into data/fundamentals/yahoo.csv.
+# The daily screener job picks up the new file; on the default branch it also runs
+# right after this job finishes.
+on:
+  schedule:
+    - cron: "0 3 * * 6" # Saturday 8:30 AM IST
+  workflow_dispatch:
+  push:
+    branches: [claude/bold-ramanujan-tj3yqi]
+    paths: [".github/workflows/fundamentals.yml", "pipeline/fetch_fundamentals.py", "research/nsesig/fundamentals.py"]
+
+permissions:
+  contents: write
+
+concurrency:
+  group: fundamentals
+  cancel-in-progress: false
+
+jobs:
+  fundamentals:
+    runs-on: ubuntu-latest
+    timeout-minutes: 100
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - run: pip install pandas numpy requests yfinance
+
+      - name: Fetch EPS and shares
+        run: python -u pipeline/fetch_fundamentals.py --max-minutes 85
+
+      - name: Commit data
+        if: always()
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add data/fundamentals
+          if git diff --cached --quiet; then echo "no change"; exit 0; fi
+          git commit -m "data: fundamentals $(TZ=Asia/Kolkata date +%F)"
+          for i in 1 2 3; do git pull --rebase -q origin "${GITHUB_REF_NAME}" && git push origin "HEAD:${GITHUB_REF_NAME}" && break; sleep 5; done
