@@ -1,7 +1,7 @@
 {
-  "as_of": "2026-11-12",
+  "as_of": "2026-11-13",
   "stocks": 5669,
-  "breakouts_today": 7,
+  "breakouts_today": 0,
   "has_reference": true,
   "by_exchange": {
     "NSE+BSE": 2503,
@@ -9,15 +9,15 @@
     "NSE": 710
   },
   "by_status": {
-    "Active": 3681,
-    "SME": 1050,
-    "Trade-to-trade": 662,
-    "No recent trades": 276
+    "Active": 3666,
+    "SME": 1058,
+    "Trade-to-trade": 677,
+    "No recent trades": 268
   },
   "bse_master_file": false,
-  "with_mcap": 5622,
-  "with_pe": 3870,
-  "with_revenue": 4808,
+  "with_mcap": 5621,
+  "with_pe": 3869,
+  "with_revenue": 4807,
   "eps_as_of": "2026-09-27",
   "universe": {
     "min_adtv_cr": 15.0,
