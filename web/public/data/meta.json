@@ -15,9 +15,9 @@
     "No recent trades": 268
   },
   "bse_master_file": false,
-  "with_mcap": 5621,
-  "with_pe": 3869,
-  "with_revenue": 4807,
+  "with_mcap": 5628,
+  "with_pe": 3877,
+  "with_revenue": 4814,
   "eps_as_of": "2026-09-27",
   "universe": {
     "min_adtv_cr": 15.0,
